@@ -1,0 +1,436 @@
+//application.prop
+
+spring.datasource.url=jdbc:h2:mem:testdb
+spring.datasource.driverClassName=org.h2.Driver
+spring.datasource.username=sa
+spring.datasource.password=password
+spring.jpa.database-platform=org.hibernate.dialect.H2Dialect
+spring.h2.console.enabled=true
+spring.h2.console.path=/h2-console
+
+//main class
+
+@SpringBootApplication
+public class UserRoleManagementApplication {
+
+    public static void main(String[] args) {
+        SpringApplication.run(UserRoleManagementApplication.class, args);
+    }
+
+}
+
+//User Entity
+
+@Entity
+public class User {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @NotEmpty(message = "Username is required")
+    @Size(min = 4, max = 20, message = "Username must be between 4 and 20 characters")
+    private String username;
+
+    @NotEmpty(message = "Password is required")
+    @Size(min = 8, message = "Password must be at least 8 characters long")
+    private String password;
+
+    @NotEmpty(message = "Email is required")
+    @Email(message = "Email should be valid")
+    private String email;
+
+    @NotEmpty(message = "Mobile number is required")
+    @Pattern(regexp = "^\\d{10}$", message = "Mobile number must be 10 digits")
+    private String mobileNumber;
+
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(
+            name = "user_roles",
+            joinColumns = @JoinColumn(name = "user_id"),
+            inverseJoinColumns = @JoinColumn(name = "role_id")
+    )
+    private Set<Role> roles = new HashSet<>();
+
+    // getters and setters
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getUsername() {
+        return username;
+    }
+
+    public void setUsername(String username) {
+        this.username = username;
+    }
+
+    public String getPassword() {
+        return password;
+    }
+
+    public void setPassword(String password) {
+        this.password = password;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public void setEmail(String email) {
+        this.email = email;
+    }
+
+    public String getMobileNumber() {
+        return mobileNumber;
+    }
+
+    public void setMobileNumber(String mobileNumber) {
+        this.mobileNumber = mobileNumber;
+    }
+
+    public Set<Role> getRoles() {
+        return roles;
+    }
+
+    public void setRoles(Set<Role> roles) {
+        this.roles = roles;
+    }
+}
+
+//Role @Entity
+public class Role {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @NotEmpty(message = "Role name is required")
+    @Size(min = 2, max = 50, message = "Role name must be between 2 and 50 characters")
+    private String name;
+
+    @ManyToMany(mappedBy = "roles")
+    private Set<User> users = new HashSet<>();
+
+    @ManyToMany(fetch = FetchType.EAGER)
+    @JoinTable(
+            name = "role_permissions",
+            joinColumns = @JoinColumn(name = "role_id"),
+            inverseJoinColumns = @JoinColumn(name = "permission_id")
+    )
+    private Set<Permission> permissions = new HashSet<>();
+
+    // getters and setters
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public Set<User> getUsers() {
+        return users;
+    }
+
+    public void setUsers(Set<User> users) {
+        this.users = users;
+    }
+
+    public Set<Permission> getPermissions() {
+        return permissions;
+    }
+
+    public void setPermissions(Set<Permission> permissions) {
+        this.permissions = permissions;
+    }
+}
+
+//Permissions Entity
+@Entity
+public class Permission {
+
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @NotEmpty(message = "Permission name is required")
+    @Size(min = 2, max = 100, message = "Permission name must be between 2 and 100 characters")
+    private String name;
+
+    @ManyToMany(mappedBy = "permissions")
+    private Set<Role> roles = new HashSet<>();
+
+    // getters and setters
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public Set<Role> getRoles() {
+        return roles;
+    }
+
+    public void setRoles(Set<Role> roles) {
+        this.roles = roles;
+    }
+}
+
+//User Service
+
+@Service
+public class UserService implements UserDetailsService {
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private PasswordEncoder passwordEncoder;
+
+    public User save(User user) {
+        user.setPassword(passwordEncoder.encode(user.getPassword()));
+        return userRepository.save(user);
+    }
+
+    public Optional<User> findById(Long id) {
+        return userRepository.findById(id);
+    }
+
+    public List<User> findAll() {
+        return userRepository.findAll();
+    }
+
+    public void deleteById(Long id) {
+        userRepository.deleteById(id);
+    }
+
+    @Override
+    public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+        User user = userRepository.findByUsername(username);
+        if (user == null) {
+            throw new UsernameNotFoundException("User not found");
+        }
+        return org.springframework.security.core.userdetails.User
+                .withUsername(username)
+                .password(user.getPassword())
+                .authorities(user.getRoles().stream()
+                        .map(role -> "ROLE_" + role.getName().toUpperCase())
+                        .toArray(String[]::new))
+                .build();
+    }
+}
+
+//RoleService
+
+@Service
+public class RoleService {
+
+    @Autowired
+    private RoleRepository roleRepository;
+
+    public Role save(Role role) {
+        return roleRepository.save(role);
+    }
+
+    public Optional<Role> findById(Long id) {
+        return roleRepository.findById(id);
+    }
+
+    public List<Role> findAll() {
+        return roleRepository.findAll();
+    }
+
+    public void deleteById(Long id) {
+        roleRepository.deleteById(id);
+    }
+}
+
+
+//PermissionService
+
+@Service
+public class PermissionService {
+
+    @Autowired
+    private PermissionRepository permissionRepository;
+
+    public Permission save(Permission permission) {
+        return permissionRepository.save(permission);
+    }
+
+    public Optional<Permission> findById(Long id) {
+        return permissionRepository.findById(id);
+    }
+
+    public List<Permission> findAll() {
+        return permissionRepository.findAll();
+    }
+
+    public void deleteById(Long id) {
+        permissionRepository.deleteById(id);
+    }
+}
+
+
+//UserController
+
+
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+
+    @Autowired
+    private UserService userService;
+
+    @PostMapping
+    public ResponseEntity<User> createUser(@RequestBody User user) {
+        User savedUser = userService.save(user);
+        return ResponseEntity.ok(savedUser);
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<User> getUserById(@PathVariable Long id) {
+        Optional<User> user = userService.findById(id);
+        return user.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @GetMapping
+    public ResponseEntity<List<User>> getAllUsers() {
+        List<User> users = userService.findAll();
+        return ResponseEntity.ok(users);
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteUserById(@PathVariable Long id) {
+        userService.deleteById(id);
+        return ResponseEntity.noContent().build();
+    }
+}
+
+//RoleController
+
+@RestController
+@RequestMapping("/api/roles")
+public class RoleController {
+
+    @Autowired
+    private RoleService roleService;
+
+    @PostMapping
+    public ResponseEntity<Role> createRole(@RequestBody Role role) {
+        Role savedRole = roleService.save(role);
+        return ResponseEntity.ok(savedRole);
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<Role> getRoleById(@PathVariable Long id) {
+        Optional<Role> role = roleService.findById(id);
+        return role.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @GetMapping
+    public ResponseEntity<List<Role>> getAllRoles() {
+        List<Role> roles = roleService.findAll();
+        return ResponseEntity.ok(roles);
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deleteRoleById(@PathVariable Long id) {
+        roleService.deleteById(id);
+        return ResponseEntity.noContent().build();
+    }
+}
+
+//PermissionController
+
+@RestController
+@RequestMapping("/api/permissions")
+public class PermissionController {
+
+    @Autowired
+    private PermissionService permissionService;
+
+    @PostMapping
+    public ResponseEntity<Permission> createPermission(@RequestBody Permission permission) {
+        Permission savedPermission = permissionService.save(permission);
+        return ResponseEntity.ok(savedPermission);
+    }
+
+    @GetMapping("/{id}")
+    public ResponseEntity<Permission> getPermissionById(@PathVariable Long id) {
+        Optional<Permission> permission = permissionService.findById(id);
+        return permission.map(ResponseEntity::ok).orElseGet(() -> ResponseEntity.notFound().build());
+    }
+
+    @GetMapping
+    public ResponseEntity<List<Permission>> getAllPermissions() {
+        List<Permission> permissions = permissionService.findAll();
+        return ResponseEntity.ok(permissions);
+    }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> deletePermissionById(@PathVariable Long id) {
+        permissionService.deleteById(id);
+        return ResponseEntity.noContent().build();
+    }
+}
+
+//SecurityConfig
+
+@Configuration
+@EnableWebSecurity
+@EnableGlobalMethodSecurity(prePostEnabled = true)
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+
+    @Autowired
+    private UserService userService;
+
+    @Override
+    protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+        auth.userDetailsService(userService).passwordEncoder(passwordEncoder());
+    }
+
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http
+                .csrf().disable()
+                .authorizeRequests()
+                .antMatchers("/api/**").authenticated()
+                .anyRequest().permitAll()
+                .and()
+                .httpBasic();
+    }
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+}
+
+//
